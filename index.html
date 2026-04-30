@@ -242,10 +242,6 @@ tr:hover td{background:rgba(232,84,10,.02);}
 .text-sm{font-size:12px;}
 .fw-bold{font-weight:700;}
 .gap-8{display:flex;gap:8px;flex-wrap:wrap;}
-
-/* Agendamento */
-.ag-slot-livre{border:1px dashed var(--border);border-radius:4px;padding:4px 10px;color:var(--muted);font-size:11px;cursor:pointer;transition:all .2s;background:none;}
-.ag-slot-livre:hover{border-color:var(--orange);color:var(--orange);}
 </style>
 </head>
 <body>
@@ -290,7 +286,6 @@ tr:hover td{background:rgba(232,84,10,.02);}
       <button class="nav-item" onclick="nav('relatorios',this)"><span class="nav-icon">📄</span>Relatórios</button>
 
       <div class="nav-section">Comercial</div>
-      <button class="nav-item" onclick="nav('agendamento',this)"><span class="nav-icon">📅</span>Agendamento</button>
       <button class="nav-item" onclick="nav('orcamentos',this)"><span class="nav-icon">💼</span>Orçamentos</button>
       <button class="nav-item" onclick="nav('cobrancas',this)"><span class="nav-icon">💰</span>Cobranças</button>
 
@@ -423,25 +418,7 @@ tr:hover td{background:rgba(232,84,10,.02);}
         <div id="relatorio-resultado" style="margin-top:20px;"></div>
       </div>
 
-      <!-- ══ AGENDAMENTO ══ -->
-      <div class="panel" id="panel-agendamento">
-        <div class="card" style="margin-bottom:20px;">
-          <div class="card-header">
-            <div class="card-title">📅 Grade de Agendamento</div>
-            <div style="display:flex;gap:10px;align-items:center;">
-              <input type="date" class="fi2" id="ag-data" style="width:160px;" onchange="renderAgendamento()">
-              <button class="btn btn-orange" onclick="openModalAgendamento()">+ Agendar</button>
-            </div>
-          </div>
-          <div class="card-body" style="padding:0;">
-            <div id="grade-agendamento" style="overflow-x:auto;"></div>
-          </div>
-        </div>
-        <div class="card" id="card-pendentes" style="display:none;">
-          <div class="card-header"><div class="card-title">⏳ Solicitações Pendentes</div></div>
-          <div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Data</th><th>Horário</th><th>Tipo</th><th>Container</th><th>Obs</th><th>Ações</th></tr></thead><tbody id="pendentes-table"></tbody></table></div>
-        </div>
-      </div>
+      <!-- ══ ORÇAMENTOS ══ -->
       <div class="panel" id="panel-orcamentos">
         <div class="filter-row">
           <input class="search-input" placeholder="🔍 Buscar..." id="orc-search" oninput="renderOrcamentos()">
@@ -806,7 +783,6 @@ const panelMeta = {
   operacoes:   ['Operações','Desova, Estufagem, Ovação, Crossdocking',''],
   armazenagem: ['Armazenagem','Controle de permanência e cobrança',''],
   relatorios:  ['Relatórios','Gere relatórios por container, NF, booking ou carreta',''],
-  agendamento: ['Agendamento Operacional','Grade de janelas — Container e Carga Solta',''],
   orcamentos:  ['Orçamentos Comerciais','Proposta de preços para clientes',''],
   cobrancas:   ['Cobranças','Notas de débito e cobranças de serviços',''],
   clientes:    ['Clientes','Cadastro e condições comerciais',''],
@@ -823,7 +799,6 @@ function nav(name, btn) {
   document.getElementById('tb-sub').textContent = m[1];
   if(name==='armazenagem') renderArmazenagem();
   if(name==='tabela') renderTabela();
-  if(name==='agendamento') initAgendamento();
   setTopbarActions(name);
 }
 function setTopbarActions(name) {
@@ -1771,223 +1746,6 @@ function gerarPDFOperacao(o) {
   const w=window.open('','_blank','width=900,height=700');
   w.document.write(html); w.document.close();
 }
-// ══════════════════════════════════════════════════════════════
-//  AGENDAMENTO
-// ══════════════════════════════════════════════════════════════
-let allAgendamentos = [];
-let unsubAg;
-let agModalData = {}; // data being edited in modal
-
-// Config
-const AG_CONFIG = {
-  container: { inicio: 7, fim: 22, durMin: 15, slots: 1, label: '🏗️ Container', cor: '#E8540A' },
-  carga:     { inicio: 7, fim: 22, durMin: 60, slots: 2, label: '📦 Carga Solta', cor: '#3B82F6' },
-};
-
-function initAgendamento() {
-  // Set default date to today
-  const el = document.getElementById('ag-data');
-  if (el && !el.value) el.value = new Date().toISOString().split('T')[0];
-
-  // Subscribe real-time
-  if (!unsubAg) {
-    unsubAg = window.FB.onSnapshot(window.FB.collection(db,'agendamentos'), s => {
-      allAgendamentos = s.docs.map(d=>({id:d.id,...d.data()}));
-      renderAgendamento();
-      renderPendentes();
-    });
-  } else {
-    renderAgendamento();
-    renderPendentes();
-  }
-}
-
-function renderAgendamento() {
-  const data = document.getElementById('ag-data')?.value || new Date().toISOString().split('T')[0];
-  const el = document.getElementById('grade-agendamento');
-  if (!el) return;
-
-  const agsDia = allAgendamentos.filter(a => a.data === data);
-
-  let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;min-width:700px;">`;
-
-  // Render both grids side by side
-  ['container','carga'].forEach(tipo => {
-    const cfg = AG_CONFIG[tipo];
-    const agsT = agsDia.filter(a => a.tipo === tipo);
-    html += `<div style="border-right:1px solid var(--border);">
-      <div style="padding:14px 18px;background:rgba(0,0,0,0.2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-weight:700;font-size:14px;">${cfg.label}</div>
-        <div style="font-size:11px;color:var(--muted);">${cfg.slots} slot(s) • ${cfg.durMin}min cada</div>
-      </div>`;
-
-    // Generate time slots
-    const slots = [];
-    for (let h = cfg.inicio; h < cfg.fim; h++) {
-      for (let m = 0; m < 60; m += cfg.durMin) {
-        const hStr = String(h).padStart(2,'0');
-        const mStr = String(m).padStart(2,'0');
-        const endM = m + cfg.durMin;
-        const endH = endM >= 60 ? h+1 : h;
-        const endMStr = String(endM >= 60 ? endM-60 : endM).padStart(2,'0');
-        const endHStr = String(endH).padStart(2,'0');
-        const slotKey = `${hStr}:${mStr}`;
-        const slotEnd = `${endHStr}:${endMStr}`;
-        const ocupados = agsT.filter(a => a.horario === slotKey && a.status !== 'Recusado');
-        const livres = cfg.slots - ocupados.length;
-        slots.push({slotKey, slotEnd, ocupados, livres});
-      }
-    }
-
-    html += `<div style="max-height:520px;overflow-y:auto;">`;
-    slots.forEach(({slotKey, slotEnd, ocupados, livres}) => {
-      const isOcupado = livres <= 0;
-      const bgColor = isOcupado ? 'rgba(239,68,68,0.06)' : 'rgba(16,185,129,0.04)';
-      html += `<div style="border-bottom:1px solid var(--border2);padding:10px 18px;background:${bgColor};display:flex;align-items:center;gap:12px;">
-        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);width:110px;flex-shrink:0;">${slotKey} – ${slotEnd}</div>
-        <div style="flex:1;">`;
-
-      if (ocupados.length) {
-        ocupados.forEach(ag => {
-          const statusColor = ag.status==='Confirmado'?'#10B981':ag.status==='Pendente'?'#F59E0B':'#64748B';
-          html += `<div style="background:var(--card2);border-left:3px solid ${statusColor};border-radius:4px;padding:4px 8px;margin-bottom:4px;font-size:12px;display:flex;justify-content:space-between;align-items:center;">
-            <span><strong>${nomeCliente(ag.clienteId)||ag.clienteNome||'—'}</strong> · ${ag.operacao||'—'} ${ag.container?'· '+ag.container:''}</span>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <span style="font-size:10px;color:${statusColor};">${ag.status}</span>
-              ${ag.status==='Pendente'?`<button class="btn btn-sm" style="background:rgba(16,185,129,0.1);color:#10B981;border:1px solid rgba(16,185,129,0.2);font-size:10px;padding:2px 8px;" onclick="aprovarAg('${ag.id}')">✓</button>
-              <button class="btn btn-sm" style="background:rgba(239,68,68,0.1);color:#EF4444;border:1px solid rgba(239,68,68,0.2);font-size:10px;padding:2px 8px;" onclick="recusarAg('${ag.id}')">✗</button>`:''}
-              <button class="btn btn-sm" style="background:transparent;color:var(--muted);border:1px solid var(--border);font-size:10px;padding:2px 8px;" onclick="excluirAg('${ag.id}')">🗑</button>
-            </div>
-          </div>`;
-        });
-      }
-
-      if (!isOcupado) {
-        html += `<button onclick="openModalAg('${tipo}','${data}','${slotKey}')" style="background:none;border:1px dashed var(--border);border-radius:4px;padding:4px 10px;color:var(--muted);font-size:11px;cursor:pointer;transition:all .2s;" onmouseover="this.style.borderColor='var(--orange)';this.style.color='var(--orange)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">+ Agendar</button>`;
-      }
-
-      html += `</div></div>`;
-    });
-
-    html += `</div></div>`;
-  });
-
-  html += `</div>`;
-  el.innerHTML = html;
-
-  // Show/hide pendentes
-  const pendentes = allAgendamentos.filter(a=>a.status==='Pendente');
-  const cardP = document.getElementById('card-pendentes');
-  if (cardP) cardP.style.display = pendentes.length ? '' : 'none';
-}
-
-function renderPendentes() {
-  const el = document.getElementById('pendentes-table');
-  if (!el) return;
-  const pendentes = allAgendamentos.filter(a=>a.status==='Pendente').sort((a,b)=>a.data.localeCompare(b.data));
-  if (!pendentes.length) { el.innerHTML = ''; return; }
-  el.innerHTML = pendentes.map(a=>`<tr>
-    <td>${nomeCliente(a.clienteId)||a.clienteNome||'—'}</td>
-    <td>${fmtDate(a.data+'T12:00:00')}</td>
-    <td class="mono">${a.horario}</td>
-    <td><span class="badge badge-blue">${a.tipo==='container'?'Container':'Carga Solta'}</span></td>
-    <td class="mono">${a.container||'—'}</td>
-    <td class="text-sm text-muted">${a.obs||'—'}</td>
-    <td><div class="gap-8">
-      <button class="btn btn-sm btn-success" onclick="aprovarAg('${a.id}')">✓ Aprovar</button>
-      <button class="btn btn-sm btn-danger" onclick="recusarAg('${a.id}')">✗ Recusar</button>
-    </div></td>
-  </tr>`).join('');
-}
-
-function openModalAg(tipo, data, horario) {
-  agModalData = { tipo, data, horario };
-  // Build modal dynamically
-  const cfg = AG_CONFIG[tipo];
-  const endM = parseInt(horario.split(':')[1]) + cfg.durMin;
-  const endH = endM >= 60 ? parseInt(horario.split(':')[0])+1 : parseInt(horario.split(':')[0]);
-  const slotEnd = `${String(endH).padStart(2,'0')}:${String(endM>=60?endM-60:endM).padStart(2,'0')}`;
-
-  const existingModal = document.getElementById('modal-ag');
-  if (existingModal) existingModal.remove();
-
-  const div = document.createElement('div');
-  div.className = 'modal-overlay';
-  div.id = 'modal-ag';
-  div.innerHTML = `<div class="modal">
-    <div class="modal-title">Novo Agendamento</div>
-    <div class="modal-sub">${cfg.label} · ${fmtDate(data+'T12:00:00')} · ${horario} – ${slotEnd}</div>
-    <div class="form-grid" style="margin-bottom:14px;">
-      <div class="fg"><label>Cliente *</label><select class="fs" id="ag-cliente">${'<option value="">— Selecione —</option>'+allClientes.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select></div>
-      <div class="fg"><label>Operação *</label>
-        <select class="fs" id="ag-operacao">
-          ${tipo==='container'?`
-          <option>Entrada de Container Cheio</option>
-          <option>Entrada de Container Vazio</option>
-          <option>Saída de Container Cheio</option>
-          <option>Saída de Container Vazio</option>
-          <option>Desova</option>
-          <option>Estufagem / Ovação</option>`:`
-          <option>Recebimento de Carga</option>
-          <option>Expedição de Carga</option>
-          <option>Crossdocking</option>`}
-        </select>
-      </div>
-    </div>
-    <div class="form-grid" style="margin-bottom:14px;">
-      ${tipo==='container'?`<div class="fg"><label>Nº Container</label><input class="fi2" id="ag-container" placeholder="MSCU1234567" style="text-transform:uppercase"></div>`:'<div></div>'}
-      <div class="fg"><label>Placa do Veículo</label><input class="fi2" id="ag-placa" placeholder="AAA-0000" style="text-transform:uppercase"></div>
-    </div>
-    <div class="fg" style="margin-bottom:14px;"><label>Observações</label><textarea class="fta" id="ag-obs" placeholder="Informações adicionais..."></textarea></div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="document.getElementById('modal-ag').remove()">Cancelar</button>
-      <button class="btn btn-orange" onclick="salvarAg()">💾 Confirmar Agendamento</button>
-    </div>
-  </div>`;
-  document.body.appendChild(div);
-  div.classList.add('open');
-  div.addEventListener('click', e => { if(e.target===div) div.remove(); });
-}
-
-function openModalAgendamento() {
-  const data = document.getElementById('ag-data')?.value || new Date().toISOString().split('T')[0];
-  openModalAg('container', data, '07:00');
-}
-
-async function salvarAg() {
-  const clienteId = document.getElementById('ag-cliente')?.value;
-  const operacao  = document.getElementById('ag-operacao')?.value;
-  if (!clienteId || !operacao) { notify('Selecione o cliente e a operação','err'); return; }
-  const data = {
-    ...agModalData,
-    clienteId,
-    clienteNome: nomeCliente(clienteId),
-    operacao,
-    container: (document.getElementById('ag-container')?.value||'').toUpperCase(),
-    placa:     (document.getElementById('ag-placa')?.value||'').toUpperCase(),
-    obs:        document.getElementById('ag-obs')?.value||'',
-    status:    'Confirmado',
-    autor:     currentUserData.nome,
-    createdAt: window.FB.serverTimestamp(),
-  };
-  await window.FB.addDoc(window.FB.collection(db,'agendamentos'), data);
-  document.getElementById('modal-ag')?.remove();
-  notify('Agendamento confirmado!');
-}
-
-async function aprovarAg(id) {
-  await window.FB.updateDoc(window.FB.doc(db,'agendamentos',id), {status:'Confirmado', updatedAt:window.FB.serverTimestamp()});
-  notify('Agendamento aprovado!');
-}
-
-async function recusarAg(id) {
-  await window.FB.updateDoc(window.FB.doc(db,'agendamentos',id), {status:'Recusado', updatedAt:window.FB.serverTimestamp()});
-  notify('Agendamento recusado.','warn');
-}
-
-async function excluirAg(id) {
-  if (!confirm('Excluir este agendamento?')) return;
-  await window.FB.deleteDoc(window.FB.doc(db,'agendamentos',id));
-  notify('Agendamento excluído.');
-}
-
+</script>
+</body>
+</html>
